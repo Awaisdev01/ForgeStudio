@@ -216,6 +216,49 @@ ipcMain.handle('studio:gitUndo', (_e, ws) => {
   logEvent('git', 'reset --hard (undo)');
   return { ok: true };
 });
+/* thread branches: each chat can work in its own git worktree */
+const worktreeRoot = () => path.join(userData(), 'worktrees');
+ipcMain.handle('studio:createThreadBranch', (_e, { sessionId, baseWs }) => {
+  try {
+    const ws = baseWs ?? currentWorkspace;
+    ensureGitRepo(ws);
+    const branch = `forge/chat-${sessionId.slice(0, 8)}`;
+    const dir = path.join(worktreeRoot(), sessionId.slice(0, 8));
+    fs.mkdirSync(worktreeRoot(), { recursive: true });
+    if (!fs.existsSync(dir)) {
+      execFileSync('git', ['worktree', 'add', dir, '-b', branch], { cwd: ws, encoding: 'utf8' });
+    }
+    logEvent('branch', `${branch} → ${dir}`);
+    return { ok: true, branch, worktree: dir };
+  } catch (err) { return { ok: false, error: String(err.message).slice(0, 200) }; }
+});
+ipcMain.handle('studio:mergeThreadBranch', (_e, { sessionId, baseWs }) => {
+  try {
+    const ws = baseWs ?? currentWorkspace;
+    ensureGitRepo(ws);
+    const branch = `forge/chat-${sessionId.slice(0, 8)}`;
+    // snapshot main first, then merge
+    git(['add', '-A'], ws);
+    git(['commit', '-qm', 'forge: before merge'], ws);
+    const merge = git(['merge', '--no-edit', branch], ws);
+    // clean up worktree + branch
+    const dir = path.join(worktreeRoot(), sessionId.slice(0, 8));
+    execFileSync('git', ['worktree', 'remove', '--force', dir], { cwd: ws, encoding: 'utf8' });
+    git(['branch', '-D', branch], ws);
+    logEvent('branch', `merged ${branch}`);
+    return { ok: true, detail: merge ?? 'merged' };
+  } catch (err) { return { ok: false, error: String(err.message).slice(0, 300) }; }
+});
+ipcMain.handle('studio:discardThreadBranch', (_e, { sessionId, baseWs }) => {
+  try {
+    const ws = baseWs ?? currentWorkspace;
+    const branch = `forge/chat-${sessionId.slice(0, 8)}`;
+    const dir = path.join(worktreeRoot(), sessionId.slice(0, 8));
+    try { execFileSync('git', ['worktree', 'remove', '--force', dir], { cwd: ws, encoding: 'utf8' }); } catch {}
+    git(['branch', '-D', branch], ws);
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err.message).slice(0, 200) }; }
+});
 ipcMain.handle('studio:gitCommit', (_e, { ws, msg }) => {
   const w = ws ?? currentWorkspace;
   ensureGitRepo(w);
@@ -287,10 +330,11 @@ function toolDefs(mode, mcpTools) {
   if (mode === 'ask') return [...base, ...(mcpTools ?? [])];
   const write = { type: 'function', function: { name: 'write_file', description: mode === 'auto' ? 'Write a file (auto-applied; a checkpoint is taken first so the user can undo)' : 'Stage a file write (goes to the Diffs pane; NOT applied until approved)', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } };
   const edit = { type: 'function', function: { name: 'edit_file', description: 'Edit an existing file by exact string replacement (old → new). Cheaper and safer than rewriting whole files. Staged for review in code mode.', parameters: { type: 'object', properties: { path: { type: 'string' }, old_str: { type: 'string' }, new_str: { type: 'string' } }, required: ['path', 'old_str', 'new_str'] } } };
+  const verify = { type: 'function', function: { name: 'verify', description: '(internal) runs the project test/lint/build and returns results', parameters: { type: 'object', properties: {} } } };
   const writes = mode === 'auto'
     ? [write, edit, { type: 'function', function: { name: 'run_command', description: 'Run a shell command in the workspace (auto mode only; dangerous commands are blocked)', parameters: { type: 'object', properties: { cmd: { type: 'string' } }, required: ['cmd'] } } }]
     : [write, edit];
-  return [...base, ...writes, ...(mcpTools ?? [])];
+  return [...base, ...writes, verify, ...(mcpTools ?? [])];
 }
 
 /* run-level checkpoint: atomic snapshot of every file a run touches */
@@ -465,6 +509,40 @@ Guidelines:
   return base + '\nYou are in CODE mode: write_file/edit_file are STAGED as diffs for user review — do not claim a change is applied until the user keeps it. State clearly what you staged.';
 }
 
+/* ════ SELF-VERIFICATION ════ */
+function detectVerifyCommand(workspace) {
+  try {
+    if (fs.existsSync(path.join(workspace, 'package.json'))) {
+      const pkg = JSON.parse(fs.readFileSync(path.join(workspace, 'package.json'), 'utf8'));
+      const scripts = pkg.scripts ?? {};
+      for (const key of ['test', 'lint', 'build']) {
+        if (scripts[key]) return { cmd: `npm run ${key}${key === 'test' ? ' -- --silent' : ''}`, label: `npm run ${key}` };
+      }
+    }
+  } catch {}
+  try {
+    const pub = fs.readFileSync(path.join(workspace, 'pubspec.yaml'), 'utf8');
+    return { cmd: pub.includes('sdk: flutter') ? 'flutter analyze' : 'dart analyze', label: 'analyzer' };
+  } catch {}
+  try {
+    if (fs.existsSync(path.join(workspace, 'go.mod'))) return { cmd: 'go build ./...', label: 'go build' };
+    if (fs.existsSync(path.join(workspace, 'Cargo.toml'))) return { cmd: 'cargo check', label: 'cargo check' };
+    if (fs.existsSync(path.join(workspace, 'requirements.txt')) || fs.existsSync(path.join(workspace, 'pyproject.toml'))) return { cmd: 'python3 -m pytest --tb=short -q', label: 'pytest' };
+  } catch {}
+  return null;
+}
+function runVerify(workspace, timeout = 120_000) {
+  const v = detectVerifyCommand(workspace);
+  if (!v) return null;
+  try {
+    const { execSync } = require('node:child_process');
+    const out = execSync(v.cmd, { cwd: workspace, timeout, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return { ...v, ok: true, output: out.slice(0, 3000) };
+  } catch (e) {
+    return { ...v, ok: false, output: String(e.stderr ?? e.stdout ?? e.message).slice(0, 3000) };
+  }
+}
+
 /* MCP tool execution: real tools/call over stdio */
 async function mcpCallTool(serverEntry, toolName, argsJson) {
   return new Promise((resolve) => {
@@ -508,6 +586,7 @@ async function runAgent(session, sendEvent, abortSignal) {
   // git: snapshot before the run so any damage is revertable
   if ((session.mode ?? 'code') !== 'ask') gitSnapshot(session.workspace, `before run (${session.model})`);
   const runTouched = new Map(); // path -> original (for the run-level checkpoint)
+  let verifyRounds = 0;
   const mcpMap = mcpToolMap();
   const mcpTools = Object.entries(mcpMap).map(([full, m]) => ({
     type: 'function',
@@ -564,7 +643,23 @@ async function runAgent(session, sendEvent, abortSignal) {
         }
       } catch { /* not valid JSON — leave as prose */ }
     }
-    if (!r.toolCalls.length) break;
+    if (!r.toolCalls.length) {
+      // self-verification: if this run staged/applied writes, verify and let the agent fix failures
+      const wrote = r.toolCalls.length === 0 && (runTouched.size > 0 || session.pending.some((d) => d.status !== 'applied')) && verifyRounds < 2;
+      if (wrote) {
+        verifyRounds++;
+        const v = runVerify(session.workspace);
+        if (v) {
+          sendEvent({ type: 'notice', payload: v.ok ? `✓ ${v.label} passed` : `✗ ${v.label} failed — agent is fixing…` });
+          sendEvent({ type: 'tool-start', payload: { name: 'verify', detail: v.label } });
+          session.messages.push({ role: 'assistant', content: r.content ?? '', tool_calls: [{ id: `verify_${i}`, type: 'function', function: { name: 'verify', arguments: '{}' } }] });
+          session.messages.push({ role: 'tool', tool_call_id: `verify_${i}`, name: 'verify', content: v.ok ? `${v.label} PASSED:\n${v.output}` : `${v.label} FAILED — fix the errors:\n${v.output}` });
+          sendEvent({ type: 'tool-end', payload: { name: 'verify', ms: 0, output: v.output.slice(0, 500) } });
+          continue; // next iteration with verification results in context
+        }
+      }
+      break;
+    }
 
     // assistant message must carry tool_calls for API validity
     session.messages.push({

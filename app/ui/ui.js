@@ -89,7 +89,11 @@ function splitHtml(d) {
   }
   return out;
 }
-function toggleSplit() { state.diffSplit = !state.diffSplit; renderDiffs(); }
+function toggleSplit() { state.diffSplit = !state.diffSplit; window.studio.setSettings({ diffSplit: state.diffSplit }); renderDiffs(); }
+if (state.diffSplit === undefined) void window.studio.getSettings().then((st) => {
+  state.diffSplit = st.diffSplit ?? window.innerWidth > 1500;
+  renderDiffs();
+});
 window.toggleSplit = toggleSplit;
 function diffHtml(d) {
   if (state.diffSplit) return splitHtml(d);
@@ -585,6 +589,33 @@ function autoExplainer() {
 }
 
 /* ═══════════ GIT CHIP ═══════════ */
+async function createThreadBranch() {
+  if (!state.workspace || !state.sessionId) return toast('open a folder + start a chat first', 'warn');
+  const r = await window.studio.createThreadBranch(state.sessionId, state.workspace);
+  if (r.ok) {
+    state.workspace = r.worktree;
+    window.studio.setSettings({ workspace: r.worktree });
+    updateWorkspaceUi(); await initTree(); void projectSuggestions();
+    toast(`isolated in worktree → ${r.branch}`, 'ok');
+  } else toast(r.error, 'warn');
+}
+async function mergeThreadBranch() {
+  if (!state.sessionId) return toast('no chat', 'warn');
+  const r = await window.studio.mergeThreadBranch(state.sessionId, state.workspace);
+  if (r.ok) {
+    toast('merged into main ✓', 'ok');
+    // jump back to the main workspace
+    const rec = await window.studio.listRecent();
+    if (rec.length) { state.workspace = rec[0]; window.studio.setSettings({ workspace: rec[0] }); updateWorkspaceUi(); await initTree(); }
+  } else toast(r.error, 'warn');
+}
+async function discardThreadBranch() {
+  if (!state.sessionId) return toast('no chat', 'warn');
+  const r = await window.studio.discardThreadBranch(state.sessionId, state.workspace);
+  if (r.ok) toast('branch discarded', 'ok');
+}
+window.createThreadBranch = createThreadBranch;
+
 async function refreshGitChip() {
   if (!state.workspace) { $('git-chip').textContent = ''; return; }
   const g = await window.studio.gitInfo(state.workspace);
@@ -952,6 +983,9 @@ document.querySelectorAll('.suggest').forEach((s) => s.addEventListener('click',
 const commands = [
   { ico: '📋', name: 'Edit project rules (.forge/RULES.md)', act: () => void editRules() },
   { ico: '⑂', name: 'Git: commit current state', act: async () => { await window.studio.gitCommit(state.workspace, 'forge: manual commit'); void refreshGitChip(); toast('committed', 'ok'); } },
+  { ico: '🌿', name: 'Branch: isolate this chat in its own worktree', act: () => void createThreadBranch() },
+  { ico: '🔀', name: 'Branch: merge this chat\'s branch into main', act: () => void mergeThreadBranch() },
+  { ico: '🗑', name: 'Branch: discard this chat\'s branch', act: () => void discardThreadBranch() },
   { ico: '⌫', name: 'Git: undo all changes since last commit', act: async () => { if (!confirm('Hard reset to last commit? Agent-made and your uncommitted changes will be lost.')) return; await window.studio.gitUndo(state.workspace); void refreshGitChip(); void initTree(); toast('reset to last commit', 'ok'); } },
   { ico: '⤓', name: 'Export current chat as markdown', act: () => state.sessionId ? void window.studio.exportSession(state.sessionId) : toast('no chat to export') },
   { ico: '▶', name: 'Start live preview', act: async () => { await window.studio.previewStart(state.workspace); showPreview(); switchTab('preview'); } },

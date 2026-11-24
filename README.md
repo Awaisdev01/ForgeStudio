@@ -127,9 +127,9 @@ Multi-provider streaming, tool-call accumulation, token usage, free-tier fallbac
 - [x] Staged diffs, sessions, MCP, multi-provider picker
 - [x] Git layer, checkpoints, command palette, rules file
 - [x] Streaming, thinking indicator, tool-call recovery
-- [ ] Agent self-verification (run tests → fix failures loop)
-- [ ] Worktree-per-thread branching
-- [ ] Side-by-side diff as default on wide screens
+- [x] **Agent self-verification** — after edits, the project's test/lint/build runs automatically; failures feed back so the agent fixes them (bounded to 2 rounds)
+- [x] **Worktree-per-thread** — ⌘K isolates a chat in its own git worktree; merge or discard when done
+- [x] Side-by-side diff as default on wide screens
 
 ## ⚠️ Notes
 
