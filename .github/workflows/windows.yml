@@ -15,7 +15,7 @@ jobs:
         run: npm install
         working-directory: .
       - name: Build Windows exe
-        run: npx electron-builder --win portable nsis
+        run: npx electron-builder --win portable nsis --publish never
         env:
           ELECTRON_RUN_AS_NODE: ''
       - name: Release
