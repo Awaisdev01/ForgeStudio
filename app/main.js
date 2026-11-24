@@ -581,6 +581,38 @@ function mcpToolMap() {
   return map;
 }
 
+/* session compaction: summarize old turns when near the context window */
+function estimateTokens(messages) {
+  return Math.ceil(JSON.stringify(messages).length / 4);
+}
+async function compactIfNeeded(session, sendEvent) {
+  const [pid] = (session.model ?? '').split('/');
+  const windows = { ollama: 28_000, lmstudio: 28_000, gemini: 900_000, groq: 120_000, cerebras: 120_000, openrouter: 120_000, zai: 120_000 };
+  const limit = windows[pid] ?? 100_000;
+  if (estimateTokens(session.messages) < limit * 0.7) return;
+  const keep = 6; // recent messages kept verbatim
+  const old = session.messages.slice(0, -keep);
+  if (old.length < 4) return;
+  try {
+    const res = await callUpstreamFallback({
+      messages: [
+        { role: 'system', content: 'Summarize this coding conversation compactly: what was done, files changed, decisions, open items. Max 250 words.' },
+        { role: 'user', content: old.map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n---\n').slice(0, 40_000) },
+      ], stream: false, temperature: 0.2,
+    }, session.model, null);
+    if (!res.res.ok) return;
+    const data = await res.res.json();
+    const summary = data.choices?.[0]?.message?.content ?? '';
+    if (!summary) return;
+    session.messages = [
+      { role: 'user', content: '[Conversation summary of earlier turns]\n' + summary },
+      ...session.messages.slice(-keep),
+    ];
+    sendEvent({ type: 'notice', payload: `📚 context compacted — ${old.length} older messages summarized` });
+    logEvent('compact', session.id);
+  } catch { /* compaction is best-effort */ }
+}
+
 async function runAgent(session, sendEvent, abortSignal) {
   const MAX_ITER = 12;
   // git: snapshot before the run so any damage is revertable
@@ -593,6 +625,7 @@ async function runAgent(session, sendEvent, abortSignal) {
     function: { name: full, description: m.server.tools?.find((t) => t.name === m.tool)?.description || `MCP tool ${m.tool} from ${m.server.name}`, parameters: { type: 'object' } },
   }));
   session.usage ??= { prompt_tokens: 0, completion_tokens: 0 };
+  await compactIfNeeded(session, sendEvent);
   for (let i = 0; i < MAX_ITER; i++) {
     if (abortSignal?.aborted) { sendEvent({ type: 'done', payload: { stopped: true } }); return { sessionId: session.id, stopped: true }; }
     const stepStart = Date.now();
@@ -1168,7 +1201,7 @@ ipcMain.handle('studio:applyDiff', (_e, diff) => {
 });
 /* agent run: main owns the message history (incl. tool calls); renderer only sends the new prompt */
 const runningAgents = new Map(); // sessionId -> AbortController
-ipcMain.handle('studio:runAgent', (_e, { sessionId, prompt, model, mode }) => {
+ipcMain.handle('studio:runAgent', (_e, { sessionId, prompt, model, mode, images }) => {
   return new Promise((resolve) => {
     (async () => {
       let session;
@@ -1191,7 +1224,20 @@ ipcMain.handle('studio:runAgent', (_e, { sessionId, prompt, model, mode }) => {
       session.model = model ?? session.model;
       session.mode = mode ?? session.mode ?? 'code';
       session.updated = Date.now();
-      if (prompt) session.messages.push({ role: 'user', content: prompt });
+      if (prompt) {
+        if (images?.length) {
+          // multimodal: content array with image parts (Ollama + Gemini understand image_url)
+          session.messages.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              ...images.map((url) => ({ type: 'image_url', image_url: { url } })),
+            ],
+          });
+        } else {
+          session.messages.push({ role: 'user', content: prompt });
+        }
+      }
       const ac = new AbortController();
       runningAgents.set(session.id, ac);
       const sendEvent = (e) => { try { win?.webContents.send('studio:agent-event', e); } catch {} };
@@ -1258,6 +1304,14 @@ ipcMain.handle('studio:restoreCheckpoint', (_e, id) => {
     logEvent('undo', `restored ${meta.files.length} files from ${id}`);
     return { ok: true, detail: `${meta.files.length} files restored` };
   } catch (err) { return { ok: false, detail: err.message }; }
+});
+
+/* manual verification (Code mode: after Keep all) */
+ipcMain.handle('studio:runVerify', (_e, ws) => {
+  const v = runVerify(ws ?? currentWorkspace);
+  if (!v) return { ok: null, detail: 'no verify command detected (no package.json/pubspec/go.mod/Cargo.toml/pytest)' };
+  logEvent('verify', `${v.label}: ${v.ok ? 'PASSED' : 'FAILED'}`);
+  return { ok: v.ok, label: v.label, output: v.output };
 });
 
 /* rules file */

@@ -157,8 +157,22 @@ async function applyAllDiffs() {
   const active = state.pendingDiffs.filter((d) => d.status !== 'applied');
   if (!active.length) return;
   const ok = await window.studio.applyDiffs(active);
-  if (ok) { active.forEach((d) => (d.status = 'applied')); toast(`kept ${active.length} files (one checkpoint — Undo restores all)`, 'ok'); }
-  else toast('batch apply failed', 'warn');
+  if (ok) {
+    active.forEach((d) => (d.status = 'applied'));
+    toast(`kept ${active.length} files (one checkpoint — Undo restores all)`, 'ok');
+    void refreshGitChip();
+    // verify-after-keep: run project checks, surface results
+    const v = await window.studio.runVerify(state.workspace);
+    if (v && v.ok !== null) {
+      state.termLines.push(`<span class="cmdline">✓ verify (${v.label})</span>\n${esc((v.output ?? '').slice(0, 1200))}`);
+      renderTerm(); switchTab('term');
+      toast(v.ok ? `✓ ${v.label} passed after Keep` : `✗ ${v.label} FAILED — see Terminal`, v.ok ? 'ok' : 'warn');
+      if (!v.ok) {
+        state.messages.push({ role: 'assistant', content: `⚠️ Verification after applying changes **failed** (\`${v.label}\`). Errors are in the Terminal pane — ask me to fix them, or press ⟲ on your last message to let me retry.` });
+        renderTranscript();
+      }
+    }
+  } else toast('batch apply failed', 'warn');
   renderDiffs();
 }
 async function jumpToDiffFile(i) {
@@ -709,7 +723,7 @@ document.addEventListener('paste', async (e) => {
 });
 function renderImageChips() {
   const el = $('ctx-chips');
-  const imgs = state.images.map((im, i) => `<span class="ctx-chip">🖼 ${esc(im.split('/').pop())}<button class="icon-btn" data-img="${i}" style="padding:0 3px">×</button></span>`).join('');
+  const imgs = (state.images ?? []).map((im, i) => `<span class="ctx-chip">🖼 ${esc(im.rel.split('/').pop())}<button class="icon-btn" data-img="${i}" style="padding:0 3px">×</button></span>`).join('');
   el.innerHTML = imgs + state.ctxFiles.map((f, i) =>
     `<span class="ctx-chip">@${esc(f)}<button class="icon-btn" data-i="${i}" style="padding:0 3px">×</button></span>`).join('');
   el.style.display = el.innerHTML ? 'flex' : 'none';
@@ -803,7 +817,7 @@ async function send() {
   if (!text || state.busy) return;
   promptEl.value = ''; autoSize(); $('mention-pop').style.display = 'none';
   state.messages.push({ role: 'user', content: text, ctx: [...state.ctxFiles] });
-  state.ctxFiles = []; renderCtxChips();
+  state.ctxFiles = []; state.images = []; renderCtxChips(); renderImageChips();
   state.steps = [];
   state.busy = true; abortFlag = false;
   clearThinking();
@@ -816,8 +830,9 @@ async function send() {
     prompt: [
       text,
       state.ctxFiles?.length ? '(referenced files: ' + state.ctxFiles.join(', ') + ')' : '',
-      state.images?.length ? '(attached images saved at: ' + state.images.join(', ') + ' — view them with read_file if a vision task is needed)' : '',
+      state.images?.length ? '(analyzing the attached image(s) directly)' : '',
     ].filter(Boolean).join(' '),
+    images: (state.images ?? []).map((im) => im.dataUrl),
     model: state.model,
     mode: state.mode,
   });
@@ -980,7 +995,16 @@ document.querySelectorAll('.suggest').forEach((s) => s.addEventListener('click',
 }));
 
 /* ═══════════ COMMAND PALETTE ═══════════ */
+const PROMPT_LIBRARY = [
+  { name: '🐞 Bugfix template', body: 'There is a bug in this project: [describe the symptom].\nSteps to reproduce: [steps].\nFind the root cause, fix it minimally, and run the tests to verify.' },
+  { name: '♻️ Refactor template', body: 'Refactor [file/module] to [goal: e.g. reduce duplication / extract helpers].\nKeep behavior identical. Run the test suite after to confirm.' },
+  { name: '🚀 Feature template', body: 'Implement [feature description].\nRequirements: [list].\nFollow the existing patterns in this codebase; add tests if a test framework exists.' },
+  { name: '📝 Docs template', body: 'Update the README and any doc comments to match the current code. Include setup, usage examples, and a short architecture note.' },
+  { name: '🧪 Tests template', body: 'Add tests for [module]. Cover the happy path and edge cases. Use the existing test framework and naming conventions.' },
+  { name: '⚡ Perf template', body: 'Profile and improve performance in [area]. Identify the bottleneck first, state it, then optimize and verify with [benchmark/test].' },
+];
 const commands = [
+  { ico: '📚', name: 'Prompt library: insert a task template', act: () => void showPromptLibrary() },
   { ico: '📋', name: 'Edit project rules (.forge/RULES.md)', act: () => void editRules() },
   { ico: '⑂', name: 'Git: commit current state', act: async () => { await window.studio.gitCommit(state.workspace, 'forge: manual commit'); void refreshGitChip(); toast('committed', 'ok'); } },
   { ico: '🌿', name: 'Branch: isolate this chat in its own worktree', act: () => void createThreadBranch() },
@@ -1018,6 +1042,18 @@ function renderPalette(q) {
   $('palette-list').querySelectorAll('.pitem').forEach((p, i) => p.addEventListener('click', () => { closePop(); list[i].act(); }));
 }
 palInput.addEventListener('input', () => renderPalette(palInput.value));
+function showPromptLibrary() {
+  $('palette').classList.add('open');
+  palInput.value = '';
+  $('palette-list').innerHTML = PROMPT_LIBRARY.map((t, idx) =>
+    `<div class="pitem" data-tpl="${idx}"><span class="p-ico">${t.name.slice(0, 2)}</span><span style="flex:1">${esc(t.name.slice(2).trim())}</span></div>`).join('');
+  $('palette-list').querySelectorAll('.pitem').forEach((el) => el.addEventListener('click', () => {
+    closePop();
+    promptEl.value = PROMPT_LIBRARY[Number(el.dataset.tpl)].body;
+    autoSize(); promptEl.focus();
+    toast('template inserted — fill in the [brackets]');
+  }));
+}
 async function editRules() {
   if (!state.workspace) return toast('open a folder first', 'warn');
   const cur = await window.studio.getRules(state.workspace);

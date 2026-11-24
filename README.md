@@ -132,12 +132,12 @@ Multi-provider streaming, tool-call accumulation, token usage, free-tier fallbac
 - [x] Worktree-per-thread branching
 - [x] Side-by-side diff on wide screens
 
-**Next — v0.7**
-- [ ] **Vision agents** — qwen-vl / gemini-multimodal so pasted screenshots get *analyzed*, not just referenced
-- [ ] **Verify-everything mode** — even Code (staged) runs verify after Keep, blocking merge until green
-- [ ] **Merge conflict UX** — inline conflict resolution when thread branches diverge
-- [ ] **Prompt library** — reusable task templates (bugfix / refactor / migrate) with variables
-- [ ] **Session compaction** — auto-summarize old context when chats grow past the token window
+**Next — v0.7** *(in this release)*
+- [x] **Vision agents** — paste an image; it's sent as a real image part to the model (test: `ollama pull qwen3-vl:4b`). Non-vision models fall back gracefully
+- [x] **Verify-after-Keep** — Code mode now also verifies: after *Keep all*, the project check runs and failures surface in Terminal + chat
+- [x] **Prompt library** — ⌘K → task templates (bugfix / refactor / feature / docs / tests / perf) with fill-in brackets
+- [x] **Session compaction** — chats auto-summarize older turns at 70% of the model's context window; the recent turns stay verbatim
+- [ ] Merge conflict UX — inline conflict resolution when thread branches diverge (next)
 
 **Later**
 - [ ] Plugin API (community tools + diff providers)

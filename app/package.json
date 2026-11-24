@@ -1,7 +1,7 @@
 {
   "name": "forgestudio",
   "main": "main.js",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "ForgeStudio \u2014 local AI gateway + agent (study project)",
   "author": "Awaisdev01",
   "productName": "ForgeStudio"
