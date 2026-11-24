@@ -1,0 +1,17 @@
+{
+  "name": "forgecode-gateway",
+  "version": "0.1.0",
+  "description": "Study project: local OpenAI-compatible AI gateway with Copilot-style session tokens, usage metering, and rate limiting. Personal use, not for distribution.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsc -w & node --watch dist/index.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
