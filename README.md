@@ -124,12 +124,25 @@ Multi-provider streaming, tool-call accumulation, token usage, free-tier fallbac
 
 ## 🗺 Roadmap
 
+**Shipped**
 - [x] Staged diffs, sessions, MCP, multi-provider picker
 - [x] Git layer, checkpoints, command palette, rules file
 - [x] Streaming, thinking indicator, tool-call recovery
-- [x] **Agent self-verification** — after edits, the project's test/lint/build runs automatically; failures feed back so the agent fixes them (bounded to 2 rounds)
-- [x] **Worktree-per-thread** — ⌘K isolates a chat in its own git worktree; merge or discard when done
-- [x] Side-by-side diff as default on wide screens
+- [x] Agent self-verification (tests → fix loop, bounded)
+- [x] Worktree-per-thread branching
+- [x] Side-by-side diff on wide screens
+
+**Next — v0.7**
+- [ ] **Vision agents** — qwen-vl / gemini-multimodal so pasted screenshots get *analyzed*, not just referenced
+- [ ] **Verify-everything mode** — even Code (staged) runs verify after Keep, blocking merge until green
+- [ ] **Merge conflict UX** — inline conflict resolution when thread branches diverge
+- [ ] **Prompt library** — reusable task templates (bugfix / refactor / migrate) with variables
+- [ ] **Session compaction** — auto-summarize old context when chats grow past the token window
+
+**Later**
+- [ ] Plugin API (community tools + diff providers)
+- [ ] Linux builds + auto-updater via GitHub Releases
+- [ ] `forge-agent-core` 0.2: browser-safe build (runs in WebContainer for ForgeCode web)
 
 ## ⚠️ Notes
 
