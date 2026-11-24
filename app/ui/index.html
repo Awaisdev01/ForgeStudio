@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ForgeStudio</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <img class="logo-app" src="logo.svg" alt="ForgeStudio">
+    <span class="brand">ForgeStudio<span class="v">v0.5</span></span>
+    <span class="dot" id="gw-dot" title="gateway"></span>
+    <span class="pill" id="git-chip" title="git state" style="font-family:var(--mono);font-size:9.5px;padding:2px 8px;border:1px solid var(--line);border-radius:10px;color:var(--muted)"></span>
+    <div class="grow"></div>
+    <span class="hint" style="font-family:var(--mono);font-size:9.5px;color:var(--faint)"><kbd>⌘K</kbd> commands</span>
+    <button class="btn sm" id="btn-undo" title="Undo last auto-applied change">↩ Undo</button>
+    <button class="btn sm" id="btn-settings" title="Settings">⚙</button>
+    <button class="btn sm" id="btn-rail-toggle" title="Toggle right rail">▤</button>
+  </div>
+  <div class="main">
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="side-sec">
+        <div class="side-label">Project</div>
+        <button class="proj-btn" id="proj-btn" title="Choose workspace folder">
+          <div class="proj-ico" id="proj-ico">+</div>
+          <div style="min-width:0;flex:1">
+            <div class="proj-name" id="proj-name">Open folder…</div>
+            <div class="proj-path" id="proj-path">choose a project to work in</div>
+          </div>
+        </button>
+      </div>
+      <div class="side-sec" style="padding-bottom:0">
+        <div style="display:flex;align-items:center;margin-bottom:7px">
+          <div class="side-label" style="flex:1;margin:0">Chats</div>
+          <button class="btn sm primary" id="btn-new-chat" style="padding:3px 10px">+ New</button>
+        </div>
+        <input class="chat-search" id="chat-search" placeholder="Search chats…">
+      </div>
+      <div class="chat-list" id="chat-list"><div class="chat-empty">No chats yet</div></div>
+      <div class="side-foot">
+        <div class="side-label" style="margin-bottom:6px">Model</div>
+        <button class="model-btn" id="model-btn">
+          <span class="status-dot ready" id="model-dot"></span>
+          <div class="sel">
+            <div class="name" id="model-name">Gemini Flash</div>
+            <div class="prov" id="model-prov">Google Gemini · free tier</div>
+          </div>
+          <span style="color:var(--faint);font-size:10px">▾</span>
+        </button>
+      </div>
+    </aside>
+    <div class="col-gutter" id="gutter-left"></div>
+
+    <!-- CENTER -->
+    <div class="chat-col">
+      <div class="transcript" id="transcript">
+        <div class="welcome" id="welcome">
+          <img class="hero-logo" src="logo.svg" alt="">
+          <div class="big">What should we <em>build?</em></div>
+          <div class="sub" id="welcome-sub">Open a project folder, then describe what you want. Edits collect in the Diffs pane — nothing touches your files until you approve.</div>
+          <div class="chips">
+            <div class="suggest" data-p="Explain this project's structure and what it does"><div class="st">🔍 Explain this project</div><div class="sd">Architecture walkthrough of the open folder</div></div>
+            <div class="suggest" data-p="Add a README with setup instructions"><div class="st">📝 Add a README</div><div class="sd">Setup + usage docs for this project</div></div>
+            <div class="suggest" data-p="Find and fix any bugs in the main entry file"><div class="st">🐛 Find &amp; fix bugs</div><div class="sd">Audit the main entry for issues</div></div>
+            <div class="suggest" data-p="Write tests for the core module"><div class="st">🧪 Write tests</div><div class="sd">Test the core module end to end</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="composer-wrap" id="composer-wrap">
+        <div class="mention-pop" id="mention-pop" style="display:none"></div>
+        <div class="composer">
+          <div class="ctx-chips" id="ctx-chips" style="display:none"></div>
+          <textarea id="prompt" rows="1" placeholder="Describe what to build or change…  @ to mention files"></textarea>
+          <div class="row">
+            <div class="mode-toggle">
+              <button class="mode-opt ask" data-mode="ask" title="Read-only — the agent can look but not touch">Ask</button>
+              <button class="mode-opt code active" data-mode="code" title="Edits are staged for your review">Code</button>
+              <button class="mode-opt auto" data-mode="auto" title="Apply automatically with checkpoints (undo available)">Auto</button>
+            </div>
+            <span class="hint" id="ws-hint">no folder</span>
+            <span id="ctx-meter" style="display:none"></span>
+            <div class="grow" style="flex:1"></div>
+            <button class="btn primary" id="btn-send" disabled>Send ↑</button>
+            <button class="stop-btn" id="btn-stop" style="display:none">■ Stop</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-gutter" id="gutter-right"></div>
+
+    <!-- RIGHT RAIL -->
+    <div class="right-rail" id="right-rail">
+      <div class="rtabs">
+        <div class="rtab active" data-pane="files">Files</div>
+        <div class="rtab" data-pane="diffs">Diffs<span class="badge-n" id="diff-badge"></span></div>
+        <div class="rtab" data-pane="term">Terminal</div>
+        <div class="rtab" data-pane="mcp">MCP</div>
+        <div class="rtab" data-pane="preview">Preview</div>
+        <div class="rtab" data-pane="checkpoints">History</div>
+        <div class="rtab" data-pane="manager">Agent</div>
+        <div class="rtab" data-pane="keys">Keys</div>
+      </div>
+      <div class="rpane filepane" id="pane-files"><div class="empty"><span class="e-ico">📂</span>Open a folder to browse files.</div></div>
+      <div class="rpane" id="pane-diffs" style="display:none"><div class="empty"><span class="e-ico">✏️</span>Agent edits collect here for review.<br>Nothing is written until you approve.</div></div>
+      <div class="rpane" id="pane-term" style="display:none"><div class="term" id="term-log"><span style="color:var(--faint)">command output appears here (Auto mode)</span></div></div>
+      <div class="rpane" id="pane-mcp" style="display:none">
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <input id="mcp-name" placeholder="name" style="flex:1">
+          <input id="mcp-cmd" placeholder="npx -y some-mcp-server" style="flex:2">
+          <button class="btn sm" id="btn-mcp-add">Add</button>
+        </div>
+        <div id="mcp-list"></div>
+      </div>
+      <div class="rpane filepane" id="pane-preview" style="display:none">
+        <div style="display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--rail)">
+          <button class="btn sm primary" id="btn-preview-start">▶ Start preview</button>
+          <button class="btn sm" id="btn-preview-reload">⟳ Reload</button>
+          <button class="btn sm danger-ghost" id="btn-preview-stop">■</button>
+        </div>
+        <iframe id="preview-frame" style="flex:1;width:100%;border:none;background:#fff;display:none"></iframe>
+        <div class="empty" id="preview-empty">Serves the workspace on :4185 — web projects show their live UI here.</div>
+      </div>
+      <div class="rpane" id="pane-checkpoints" style="display:none"></div>
+      <div class="rpane" id="pane-manager" style="display:none"></div>
+      <div class="rpane" id="pane-keys" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- model picker popup -->
+<div class="palette-overlay" id="model-pop">
+  <div class="palette" style="width:420px">
+    <input id="model-search" placeholder="Search models…">
+    <div class="plist" id="model-plist"></div>
+  </div>
+</div>
+<!-- command palette -->
+<div class="palette-overlay" id="palette">
+  <div class="palette">
+    <input id="palette-input" placeholder="Type a command…">
+    <div class="plist" id="palette-list"></div>
+  </div>
+</div>
+<!-- settings modal -->
+<div class="palette-overlay" id="settings-modal">
+  <div class="palette" style="width:440px">
+    <div style="padding:14px 18px;font-family:var(--mono);font-weight:700;border-bottom:1px solid var(--line)">Settings</div>
+    <div style="padding:14px 18px;display:flex;flex-direction:column;gap:12px">
+      <label style="display:flex;justify-content:space-between;align-items:center"><span>Accent color</span>
+        <select id="set-accent"><option value="#B7FF45">Forge Lime</option><option value="#7CFFB2">Mint</option><option value="#9AA7FF">Periwinkle</option><option value="#FFC24B">Amber</option></select></label>
+      <label style="display:flex;justify-content:space-between;align-items:center"><span>Font size</span>
+        <select id="set-font"><option value="13px">13px</option><option value="14px">14px</option><option value="15px">15px</option></select></label>
+      <label style="display:flex;justify-content:space-between;align-items:center"><span>Completion sound</span>
+        <input type="checkbox" id="set-sound" checked></label>
+      <label style="display:flex;justify-content:space-between;align-items:center"><span title="Per-provider request counters kept locally, never sent anywhere">Provider telemetry (local)</span>
+        <input type="checkbox" id="set-telemetry" checked></label>
+      <button class="btn primary" id="btn-set-save">Save</button>
+    </div>
+  </div>
+</div>
+<!-- onboarding modal -->
+<div class="palette-overlay" id="onboard" style="background:rgba(0,0,0,.75)">
+  <div class="palette" style="width:460px">
+    <div style="padding:26px 26px 10px;text-align:center">
+      <img src="logo.svg" style="width:60px;height:60px;border-radius:14px;margin-bottom:12px">
+      <div style="font-family:var(--mono);font-weight:700;font-size:16px" id="ob-title">Welcome to ForgeStudio</div>
+      <div id="ob-body" style="color:var(--muted);font-size:12.5px;line-height:1.7;margin-top:10px">Your local AI coding IDE. Three things to know:</div>
+      <div id="ob-steps" style="text-align:left;margin-top:14px;display:flex;flex-direction:column;gap:9px;font-size:12.5px;color:#c8cdd4">
+        <div><strong style="color:var(--accent)">1 · AI with zero keys</strong> — Ollama runs models locally (private, free). Or paste a free Gemini key in Keys.</div>
+        <div><strong style="color:var(--accent)">2 · Edits are reviewed</strong> — Code mode stages every change in the Diffs pane. Nothing touches disk until you Keep it.</div>
+        <div><strong style="color:var(--accent)">3 · Git protects you</strong> — every run is committed before changes; Undo restores instantly.</div>
+      </div>
+      <button class="btn primary" id="btn-ob-done" style="width:100%;margin-top:18px;padding:10px">Get started</button>
+    </div>
+  </div>
+</div>
+<div class="toast-wrap" id="toast-wrap"></div>
+<script src="markdown.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

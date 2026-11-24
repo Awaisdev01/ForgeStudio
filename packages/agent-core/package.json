@@ -1,0 +1,10 @@
+{
+  "name": "forge-agent-core",
+  "version": "0.1.0",
+  "description": "Portable AI coding-agent loop: OpenAI-compatible multi-provider streaming with automatic free-tier fallback, tool execution, and staged-diff support. Powers ForgeStudio.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "keywords": ["ai", "agent", "coding-agent", "openai", "ollama", "tools", "streaming"],
+  "license": "MIT",
+  "repository": { "type": "url", "url": "https://github.com/Awaisdev01/forge-agent-core" }
+}

@@ -1,17 +1,37 @@
 {
   "name": "forgecode-gateway",
-  "version": "0.1.0",
-  "description": "Study project: local OpenAI-compatible AI gateway with Copilot-style session tokens, usage metering, and rate limiting. Personal use, not for distribution.",
+  "version": "0.5.1",
+  "description": "ForgeGateway \u2014 local AI gateway dashboard (study project, personal use)",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "dev": "tsc -w & node --watch dist/index.js"
+    "start": "npm run build && electron .",
+    "dist:mac": "npm run build && electron-builder --mac dmg",
+    "dist:win": "npm run build && electron-builder --win portable nsis"
   },
-  "dependencies": {},
   "devDependencies": {
     "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.forge.forgestudio",
+    "productName": "ForgeStudio",
+    "icon": "../build/app.icns",
+    "directories": {
+      "output": "release",
+      "app": "app"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg"
+      ],
+      "identity": null,
+      "sign": false,
+      "gatekeeperAssess": false
+    }
   }
 }

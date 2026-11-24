@@ -1,0 +1,8 @@
+node_modules/
+release/
+.env.local
+.env
+gateway-state.json
+*.log
+.DS_Store
+app/.DS_Store
