@@ -23,6 +23,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="side-sec">
         <div class="side-label">Project</div>
+      <div id="recent-list" style="display:flex;flex-direction:column;gap:3px;margin-bottom:6px"></div>
         <button class="proj-btn" id="proj-btn" title="Choose workspace folder">
           <div class="proj-ico" id="proj-ico">+</div>
           <div style="min-width:0;flex:1">
@@ -79,6 +80,7 @@
               <button class="mode-opt code active" data-mode="code" title="Edits are staged for your review">Code</button>
               <button class="mode-opt auto" data-mode="auto" title="Apply automatically with checkpoints (undo available)">Auto</button>
             </div>
+            <button class="btn sm" id="btn-attach" title="Attach files (code, text, PDF)">📎 Attach</button>
             <span class="hint" id="ws-hint">no folder</span>
             <span id="ctx-meter" style="display:none"></span>
             <div class="grow" style="flex:1"></div>

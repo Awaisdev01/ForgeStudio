@@ -1,6 +1,6 @@
 {
   "name": "forgecode-gateway",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "ForgeGateway \u2014 local AI gateway dashboard (study project, personal use)",
   "type": "module",
   "main": "main.js",

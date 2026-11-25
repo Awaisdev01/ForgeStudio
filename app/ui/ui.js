@@ -13,6 +13,7 @@ const state = {
   workspace: null, busy: false, mode: 'code',
   expandedDirs: {}, openFile: null,
   ctxFiles: [],           // @ mentions attached
+  attachments: [],        // {name, path, type, content?, note?}
   termLines: [],
   thinking: '',           // live reasoning stream (muted, collapsible)
 };
@@ -723,6 +724,8 @@ document.addEventListener('paste', async (e) => {
 });
 function renderImageChips() {
   const el = $('ctx-chips');
+  const files = (state.attachments ?? []).map((a, i) =>
+    `<span class="ctx-chip">📎 ${esc(a.name)}<button class="icon-btn" data-att="${i}" style="padding:0 3px">×</button></span>`).join('');
   const imgs = (state.images ?? []).map((im, i) => `<span class="ctx-chip">🖼 ${esc(im.rel.split('/').pop())}<button class="icon-btn" data-img="${i}" style="padding:0 3px">×</button></span>`).join('');
   el.innerHTML = imgs + state.ctxFiles.map((f, i) =>
     `<span class="ctx-chip">@${esc(f)}<button class="icon-btn" data-i="${i}" style="padding:0 3px">×</button></span>`).join('');
@@ -794,6 +797,16 @@ function highlightMention() {
   $('mention-pop').querySelectorAll('.mention-item').forEach((el, i) => el.classList.toggle('sel', i === mentionState.sel));
 }
 
+$('btn-attach').addEventListener('click', async () => {
+  const files = await window.studio.attachFiles();
+  const usable = files.filter((f) => f.type === 'text' || f.type === 'pdf');
+  const skipped = files.filter((f) => f.type !== 'text' && f.type !== 'pdf');
+  state.attachments.push(...usable);
+  renderImageChips();
+  usable.forEach((f) => toast(`attached ${f.name} (${f.type}${f.chars ? ', ' + f.chars + ' chars' : ''})`, 'ok'));
+  skipped.forEach((f) => toast(`${f.name}: ${f.note}`, 'warn'));
+});
+
 /* mode toggle */
 document.querySelectorAll('.mode-opt').forEach((b) => b.addEventListener('click', () => {
   document.querySelectorAll('.mode-opt').forEach((x) => x.classList.remove('active'));
@@ -817,7 +830,7 @@ async function send() {
   if (!text || state.busy) return;
   promptEl.value = ''; autoSize(); $('mention-pop').style.display = 'none';
   state.messages.push({ role: 'user', content: text, ctx: [...state.ctxFiles] });
-  state.ctxFiles = []; state.images = []; renderCtxChips(); renderImageChips();
+  state.ctxFiles = []; state.images = []; state.attachments = []; renderCtxChips(); renderImageChips();
   state.steps = [];
   state.busy = true; abortFlag = false;
   clearThinking();
@@ -831,7 +844,8 @@ async function send() {
       text,
       state.ctxFiles?.length ? '(referenced files: ' + state.ctxFiles.join(', ') + ')' : '',
       state.images?.length ? '(analyzing the attached image(s) directly)' : '',
-    ].filter(Boolean).join(' '),
+      ...(state.attachments ?? []).map((a) => `[Attached file: ${a.name}]\n${a.content}`),
+    ].filter(Boolean).join('\n\n'),
     images: (state.images ?? []).map((im) => im.dataUrl),
     model: state.model,
     mode: state.mode,

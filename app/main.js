@@ -102,7 +102,7 @@ function resolveModel(fullId) {
 
 const CONFIG = {
   port: 4180,
-  fallbackOrder: ['gemini', 'github', 'groq', 'cerebras', 'openrouter', 'ollama', 'lmstudio'],
+  fallbackOrder: ['gemini', 'groq', 'cerebras', 'openrouter', 'ollama', 'lmstudio'],
   masterKey: 'forge-local-master',
   upstream: {
     baseUrl: 'https://api.z.ai/api/paas/v4',
@@ -117,7 +117,7 @@ const CONFIG = {
 };
 function allModels() {
   // local providers first (0 credits), then free tiers, then paid
-  const order = ['ollama', 'lmstudio', 'gemini', 'groq', 'cerebras', 'github', 'openrouter', 'zai'];
+  const order = ['ollama', 'lmstudio', 'gemini', 'groq', 'cerebras', 'openrouter', 'zai'];
   return order.flatMap((pid) => {
     const p = PROVIDERS[pid];
     if (p.local && !p.models.length) return []; // offline local server: hide instead of error
@@ -150,6 +150,24 @@ async function scanLocalProviders(force = false) {
     scan('lmstudio', 'http://127.0.0.1:1234/v1/models',
       (j) => (j.data ?? []).map((m) => ({ id: m.id, label: `${m.id} (local, 0 credits)`, openWeights: true }))),
   ]);
+  // OpenRouter: live free-model discovery with the saved key
+  if (providerKeys.openrouter) {
+    try {
+      const r = await fetch('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(10_000) });
+      if (r.ok) {
+        const j = await r.json();
+        const free = (j.data ?? []).filter((m) => (m.id ?? '').endsWith(':free'));
+        if (free.length) {
+          logEvent('scan', `openrouter: ${free.length} free models live`);
+          PROVIDERS.openrouter.models = free.slice(0, 12).map((m) => ({
+            id: m.id,
+            label: `${m.id.replace(':free', '')} (free · ${Math.round((m.context_length ?? 0) / 1000)}k ctx)`,
+          }));
+          PROVIDERS.openrouter.online = true;
+        }
+      }
+    } catch { /* keep fallback list */ }
+  }
   localScanCache = { t: Date.now(), result: true };
   return true;
 }
@@ -196,7 +214,9 @@ function gitSnapshot(workspace, label) {
   ensureGitRepo(workspace);
   git(['add', '-A'], workspace);
   const dirty = git(['status', '--porcelain'], workspace);
-  if (dirty) git(['commit', '-qm', `forge: ${label}`], workspace);
+  if (dirty && git(['rev-parse', '--verify', 'HEAD'], workspace) !== null) {
+    git(['commit', '-qm', `forge: ${label}`], workspace);
+  }
 }
 function gitInfo(workspace) {
   if (!workspace || git(['rev-parse', '--is-inside-work-tree'], workspace) !== 'true') return { repo: false };
@@ -988,6 +1008,29 @@ function createWindow() {
   }
 }
 
+/* unified userData: same path in dev and packaged, legacy dirs migrated in */
+const STABLE_UD = path.join(app.getPath('appData'), 'ForgeStudio');
+try {
+  fs.mkdirSync(STABLE_UD, { recursive: true });
+  for (const legacy of ['forgegateway', 'forgestudio', 'forgegateway-app']) {
+    const old = path.join(app.getPath('appData'), legacy);
+    if (!fs.existsSync(old) || old === STABLE_UD) continue;
+    for (const f of ['keys.json', 'gateway-state.json', 'settings.json', 'mcp-servers.json']) {
+      try {
+        if (!fs.existsSync(path.join(STABLE_UD, f)) && fs.existsSync(path.join(old, f))) {
+          fs.copyFileSync(path.join(old, f), path.join(STABLE_UD, f));
+        }
+      } catch {}
+    }
+    try {
+      if (!fs.existsSync(path.join(STABLE_UD, 'sessions')) && fs.existsSync(path.join(old, 'sessions'))) {
+        fs.renameSync(path.join(old, 'sessions'), path.join(STABLE_UD, 'sessions'));
+      }
+    } catch {}
+  }
+  app.setPath('userData', STABLE_UD);
+} catch { /* fall back to default */ }
+
 app.whenReady().then(() => {
   loadLedger();
   loadKeys();
@@ -1312,6 +1355,54 @@ ipcMain.handle('studio:runVerify', (_e, ws) => {
   if (!v) return { ok: null, detail: 'no verify command detected (no package.json/pubspec/go.mod/Cargo.toml/pytest)' };
   logEvent('verify', `${v.label}: ${v.ok ? 'PASSED' : 'FAILED'}`);
   return { ok: v.ok, label: v.label, output: v.output };
+});
+
+/* ════ FILE ATTACHMENTS ════ */
+const TEXT_EXTS = new Set(['.txt', '.md', '.json', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.py', '.dart', '.yaml', '.yml', '.css', '.scss', '.html', '.htm', '.csv', '.log', '.sh', '.bash', '.xml', '.swift', '.kt', '.kts', '.go', '.rs', '.java', '.c', '.cpp', '.h', '.hpp', '.cs', '.sql', '.toml', '.ini', '.cfg', '.conf', '.rb', '.php', '.pl', '.lua', '.r', '.gradle', '.properties', '.vue', '.svelte', '.astro', '.env', '.gitignore']);
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
+async function extractPdf(abs) {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const data = new Uint8Array(fs.readFileSync(abs));
+  const doc = await pdfjs.getDocument({ data, useSystemFonts: true }).promise;
+  const pages = Math.min(doc.numPages, 30);
+  let text = '';
+  for (let i = 1; i <= pages; i++) {
+    const page = await doc.getPage(i);
+    const tc = await page.getTextContent();
+    text += tc.items.map((it) => it.str).join(' ') + '\n';
+    if (text.length > 20_000) break;
+  }
+  return text.slice(0, 20_000);
+}
+ipcMain.handle('studio:attachFiles', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Attach files to chat',
+    properties: ['openFile', 'multiSelections'],
+  });
+  if (r.canceled || !r.filePaths.length) return [];
+  const out = [];
+  for (const abs of r.filePaths) {
+    const ext = path.extname(abs).toLowerCase();
+    const name = path.basename(abs);
+    try {
+      if (ext === '.pdf') {
+        const text = await extractPdf(abs);
+        out.push({ name, path: abs, type: 'pdf', chars: text.length, content: text });
+      } else if (IMAGE_EXTS.has(ext)) {
+        out.push({ name, path: abs, type: 'image', note: 'image — paste it in chat (⌘V) for vision models to see it' });
+      } else if (TEXT_EXTS.has(ext)) {
+        const raw = fs.readFileSync(abs, 'utf8');
+        const capped = raw.length > 8000 ? raw.slice(0, 8000) + '\n[truncated]' : raw;
+        out.push({ name, path: abs, type: 'text', chars: raw.length, content: capped });
+      } else {
+        out.push({ name, path: abs, type: 'unsupported', note: `.${ext.slice(1)} isn't attachable — text, code, PDF or images only` });
+      }
+    } catch (err) {
+      out.push({ name, path: abs, type: 'error', note: String(err.message).slice(0, 120) });
+    }
+  }
+  logEvent('attach', out.map((f) => f.name).join(', '));
+  return out;
 });
 
 /* rules file */

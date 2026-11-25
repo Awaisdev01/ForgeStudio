@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('studio', {
   getRules: (ws) => ipcRenderer.invoke('studio:getRules', ws),
   setRules: (ws, content) => ipcRenderer.invoke('studio:setRules', { ws, content }),
   saveImage: (dataUrl, name) => ipcRenderer.invoke('studio:saveImage', { dataUrl, name }),
+  attachFiles: () => ipcRenderer.invoke('studio:attachFiles'),
   runVerify: (ws) => ipcRenderer.invoke('studio:runVerify', ws),
   listRecent: () => ipcRenderer.invoke('studio:listRecent'),
   pushRecent: (ws) => ipcRenderer.invoke('studio:pushRecent', ws),
