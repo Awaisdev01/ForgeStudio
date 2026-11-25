@@ -68,6 +68,19 @@ const PROVIDERS = {
     local: true,
     models: [],
   },
+  github: {
+    label: 'GitHub Models (free with GitHub account)',
+    baseUrl: 'https://models.github.ai/inference/',
+    keyHint: 'free with your GitHub PAT — run `gh auth token`, or create at github.com/settings/tokens',
+    models: [
+      { id: 'openai/gpt-4.1-mini', label: 'GPT-4.1-mini (free tier)' },
+      { id: 'openai/gpt-4.1', label: 'GPT-4.1 (free tier)' },
+      { id: 'openai/o4-mini', label: 'o4-mini reasoning (free tier)' },
+      { id: 'meta/Llama-4-Scout-17B-16E-Instruct', label: 'Llama 4 Scout (free tier)' },
+      { id: 'mistral-ai/Mistral-Large-2411', label: 'Mistral Large (free tier)' },
+      { id: 'deepseek/DeepSeek-V3-0324', label: 'DeepSeek V3 (free tier)' },
+    ],
+  },
   zai: {
     label: 'Z.ai GLM (paid)',
     baseUrl: 'https://api.z.ai/api/paas/v4',
@@ -102,7 +115,7 @@ function resolveModel(fullId) {
 
 const CONFIG = {
   port: 4180,
-  fallbackOrder: ['gemini', 'groq', 'cerebras', 'openrouter', 'ollama', 'lmstudio'],
+  fallbackOrder: ['gemini', 'github', 'groq', 'cerebras', 'openrouter', 'ollama', 'lmstudio'],
   masterKey: 'forge-local-master',
   upstream: {
     baseUrl: 'https://api.z.ai/api/paas/v4',
@@ -117,7 +130,7 @@ const CONFIG = {
 };
 function allModels() {
   // local providers first (0 credits), then free tiers, then paid
-  const order = ['ollama', 'lmstudio', 'gemini', 'groq', 'cerebras', 'openrouter', 'zai'];
+  const order = ['ollama', 'lmstudio', 'gemini', 'groq', 'cerebras', 'github', 'openrouter', 'zai'];
   return order.flatMap((pid) => {
     const p = PROVIDERS[pid];
     if (p.local && !p.models.length) return []; // offline local server: hide instead of error
@@ -150,6 +163,25 @@ async function scanLocalProviders(force = false) {
     scan('lmstudio', 'http://127.0.0.1:1234/v1/models',
       (j) => (j.data ?? []).map((m) => ({ id: m.id, label: `${m.id} (local, 0 credits)`, openWeights: true }))),
   ]);
+  // GitHub Models: live catalog when a PAT is set
+  if (providerKeys.github) {
+    try {
+      const r = await fetch('https://models.github.ai/catalog/models', {
+        headers: { Authorization: `Bearer ${providerKeys.github}`, Accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (r.ok) {
+        const list = await r.json();
+        if (Array.isArray(list) && list.length) {
+          PROVIDERS.github.models = list.map((m) => ({
+            id: m.id ?? m.name,
+            label: `${m.id ?? m.name}${m.summary ? '' : ' (free tier)'}`,
+          }));
+          PROVIDERS.github.online = true;
+        }
+      }
+    } catch { /* keep fallback list */ }
+  }
   localScanCache = { t: Date.now(), result: true };
   return true;
 }

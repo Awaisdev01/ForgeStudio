@@ -322,7 +322,7 @@ function modelMeta(id) {
   const p = state.providers.find((x) => x.id === pid) ?? {};
   const isLocal = !!p.local;
   const isOpen = (p.models ?? []).some((m) => m.openWeights && id.endsWith(m.id));
-  const isFree = ['gemini', 'groq', 'cerebras'].includes(pid) || id.includes(':free');
+  const isFree = ['gemini', 'groq', 'cerebras', 'github'].includes(pid) || id.includes(':free');
   return { pid, p, isLocal, isOpen, isFree };
 }
 function renderModelButton() {

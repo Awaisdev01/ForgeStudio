@@ -26,7 +26,7 @@
 
 ## ✨ Features
 
-- 🔑 **Zero-key AI** — [Ollama](https://ollama.com) models run locally (private, free). Optional free-tier keys (Gemini / Groq / Cerebras / OpenRouter) for backup, never required
+- 🔑 **Zero-key AI** — [Ollama](https://ollama.com) models run locally (private, free). Optional free-tier keys (Gemini / **GitHub Models** / Groq / Cerebras / OpenRouter) for backup, never required
 - 🛡️ **Staged diff review** — the agent stages every change; you Keep / Discard per file, or all at once
 - ⏪ **Two-layer undo** — git snapshot before every run *and* file checkpoints; restore any point
 - 🧠 **Crafted agent prompts** — per-mode (Ask / Code / Auto), workspace-aware, honors `.forge/RULES.md` project rules
@@ -136,6 +136,7 @@ Multi-provider streaming, tool-call accumulation, token usage, free-tier fallbac
 - [x] **Vision agents** — paste an image; it's sent as a real image part to the model (test: `ollama pull qwen3-vl:4b`). Non-vision models fall back gracefully
 - [x] **Verify-after-Keep** — Code mode now also verifies: after *Keep all*, the project check runs and failures surface in Terminal + chat
 - [x] **Prompt library** — ⌘K → task templates (bugfix / refactor / feature / docs / tests / perf) with fill-in brackets
+- [x] **GitHub Models provider** — GPT-4.1 / o4-mini / Llama 4 / DeepSeek V3 free with any GitHub PAT (live catalog discovery)
 - [x] **Session compaction** — chats auto-summarize older turns at 70% of the model's context window; the recent turns stay verbatim
 - [ ] Merge conflict UX — inline conflict resolution when thread branches diverge (next)
 
